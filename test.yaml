@@ -1,0 +1,8 @@
+- designs:
+  - ibex
+  branches:
+  - master
+  threads: [4]
+  samples: 1
+  warmups: 1
+

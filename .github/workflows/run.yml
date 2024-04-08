@@ -1,0 +1,136 @@
+name: "openroad tests"
+run-name: ${{ github.actor }}
+on: [push]
+jobs:
+  build:
+    runs-on: [self-hosted, Linux, X64]
+    container: debian:bullseye-slim
+    env:
+      GHA_MACHINE_TYPE: "n2-standard-8"
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+      - name: build
+        shell: bash
+        run: |
+          ./apt_install.sh
+          python3 -m pip install --no-cache-dir --upgrade tabulate
+          ./deps.sh --or-tools-arch amd64 --or-tools-os debian --or-tools-os-version 11 --skip-valgrind
+          ./download.sh --full --openroad-flow-scripts-revision 0adaebe958681ae37a4c431081eba33f27a87411
+          source ./dependencies/env.sh
+          echo "OPENROAD BUILD CONFIGURATION:"
+          echo "-----------------------------"
+          env
+          echo "-----------------------------"
+          cd OpenROAD-flow-scripts
+          git -C ./tools/OpenROAD checkout b0d81bbb0dc36cd3021c9b11209bb1a2fcad5294
+          git -C ./tools/OpenROAD submodule update --recursive
+          cmake tools/OpenROAD -B tools/OpenROAD/build -D CMAKE_INSTALL_PREFIX="$PWD/tools/install/OpenROAD" -D BUILD_GUI=OFF -DCMAKE_CXX_FLAGS="${OPENROAD_OPTS}" -D CMAKE_C_FLAGS="${OPENROAD_OPTS}" ${OPENROAD_APP_ARGS} 2>&1 | tee ../build-openroad.log
+          cmake --build tools/OpenROAD/build --target install -j $(nproc --all) 2>&1 | tee -a ../build-openroad.log
+          make install -C tools/yosys -j $(nproc --all) CONFIG=gcc PREFIX="$PWD/tools/install/yosys" ${YOSYS_ARGS} | tee ../build-yosys.log
+          cd ../
+          tar cvf workspace.tar ./*
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-tarball
+          path: |
+            workspace.tar
+
+  cache_flows:
+    needs: [build]
+    strategy:
+      fail-fast: false
+      matrix:
+        designs: [ibex, ariane133]
+    runs-on: [self-hosted, Linux, X64]
+    container: debian:bullseye-slim
+    env:
+      GHA_MACHINE_TYPE: "n2-standard-8"
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: workspace-tarball
+      - name: untar workspace
+        shell: bash
+        run: |
+          tar xvf workspace.tar
+          rm workspace.tar
+      - name: run flow
+        shell: bash
+        run: |
+          ./apt_install.sh
+          export LD_LAST_PATH=$LD_LIBRARY_PATH
+          source ./dependencies/env.sh
+          export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$LD_LAST_PATH
+          make -C OpenROAD-flow-scripts/flow/ DESIGN_CONFIG=designs/nangate45/${{ matrix.designs }}/config.mk cts OR_ARGS='-threads 16' -e LD_LIBRARY_PATH=$LD_LIBRARY_PATH 
+          tar cvf workspace-${{ matrix.designs }}.tar ./*
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-tarball-${{ matrix.designs }}
+          path: |
+            workspace-${{ matrix.designs }}.tar
+
+  run:
+    strategy:
+      fail-fast: false
+      matrix:
+        designs: [ibex, ariane133]
+    runs-on: [self-hosted, Linux, X64]
+    container: debian:bullseye-slim
+    needs: [cache_flows]
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: workspace-tarball-${{ matrix.designs }}
+      - name: untar workspace
+        shell: bash
+        run: |
+          tar xvf workspace-${{ matrix.designs }}.tar
+      - name: run
+        shell: bash
+        run: |
+          ./apt_install.sh
+          pip3 install --user tqdm
+          echo "Starting benchmark"
+          export LD_LAST_PATH=$LD_LIBRARY_PATH
+          source ./dependencies/env.sh
+          export LD_LIBRARY_PATH=$LD_LAST_PATH:$LD_LIBRARY_PATH
+          python3 test.py ${{ matrix.designs }}
+          tar cvf output-${{ matrix.designs }}.tar ./output_${{ matrix.designs }}
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: output-${{ matrix.designs }}
+          path: |
+            output-${{ matrix.designs }}.tar
+  collect_data:
+    runs-on: [self-hosted, Linux, X64]
+    container: debian:bullseye-slim
+    needs: [run]
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: output-*
+          path: test_artifacts
+          merge-multiple: true
+      - name: build
+        shell: bash
+        run: |
+          ./apt_install.sh
+          mv test_artifacts/output-*.tar ./
+          tar xvf output-*.tar
+          python3 report.py >> $GITHUB_STEP_SUMMARY
+          cat $GITHUB_STEP_SUMMARY
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: report
+          path: $GITHUB_STEP_SUMMARY
