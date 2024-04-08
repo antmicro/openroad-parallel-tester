@@ -1,0 +1,1 @@
+The files `deps.sh` and `download.sh` are modified versions of [Dependency Installer from OpenROAD-flow-scripts](https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts/blob/d3715ff1f81072762a8debb945346d8822f484a9/etc/DependencyInstaller.sh)
