@@ -20,7 +20,7 @@ jobs:
     runs-on: [self-hosted, Linux, X64]
     container: debian:bullseye-slim
     env:
-      GHA_MACHINE_TYPE: "n2-standard-8"
+      GHA_MACHINE_TYPE: "n2-standard-16"
     steps:
       - name: checkout
         uses: actions/checkout@v3
@@ -72,6 +72,8 @@ jobs:
         shell: bash
         run: |
           ./apt_install.sh
+          # Saving previous states of LD_LIBRARY_PATH saves the environment's defaults
+          # from being overridden, in CI it avoids linking errors
           export LD_LAST_PATH=$LD_LIBRARY_PATH
           source ./dependencies/env.sh
           export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$LD_LAST_PATH
@@ -85,46 +87,24 @@ jobs:
           path: |
             workspace-${{ matrix.designs }}.tar
 
-  run:
-    strategy:
-      fail-fast: false
-      matrix:
-        designs: [ibex, tinyRocket, black_parrot]
-    runs-on: [self-hosted, Linux, X64]
-    container: debian:bullseye-slim
+  run_standard_8:
     needs: [cache_flows]
-    env:
-      GHA_MACHINE_TYPE: "n2-standard-8"
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: workspace-tarball-${{ matrix.designs }}
-      - name: untar workspace
-        shell: bash
-        run: |
-          tar xvf workspace-${{ matrix.designs }}.tar
-      - name: run
-        shell: bash
-        run: |
-          ./apt_install.sh
-          pip3 install --user tqdm
-          echo "Starting benchmark"
-          export LD_LAST_PATH=$LD_LIBRARY_PATH
-          source ./dependencies/env.sh
-          export LD_LIBRARY_PATH=$LD_LAST_PATH:$LD_LIBRARY_PATH
-          python3 test.py ${{ matrix.designs }}
-          tar cvf output-${{ matrix.designs }}.tar ./output_${{ matrix.designs }}
-      - name: Upload binaries
-        uses: actions/upload-artifact@v4
-        with:
-          name: output-${{ matrix.designs }}
-          path: |
-            output-${{ matrix.designs }}.tar
+    uses: ./.github/workflows/bench.yml
+    with:
+      cores: "[1,2,4]"
+      machtype: n2-standard-8
+
+  run_standard_16:
+    needs: [cache_flows]
+    uses: ./.github/workflows/bench.yml
+    with:
+      cores: "[8,12,16]"
+      machtype: n2-standard-16
+
   collect_data:
     runs-on: [self-hosted, Linux, X64]
     container: debian:bullseye-slim
-    needs: [run]
+    needs: [run_standard_8, run_standard_16]
     steps:
       - name: checkout
         uses: actions/checkout@v3
@@ -139,11 +119,11 @@ jobs:
         run: |
           ./apt_install.sh
           mv test_artifacts/output-*.tar ./
-          tar xvf output-*.tar
+          for a in `ls -1 *.tar`; do tar xvf $a; done
           python3 report.py >> $GITHUB_STEP_SUMMARY
-          cat $GITHUB_STEP_SUMMARY
+          cat $GITHUB_STEP_SUMMARY > report.md
       - name: Upload report
         uses: actions/upload-artifact@v4
         with:
           name: report
-          path: $GITHUB_STEP_SUMMARY
+          path: report.md
