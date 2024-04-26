@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-runs_no = 5
 steps = [
     "do-2_1_floorplan",
     "do-2_2_floorplan_io",
@@ -28,4 +27,3 @@ steps = [
     "do-4_1_cts",
     "do-5_1_grt"
 ]
-
