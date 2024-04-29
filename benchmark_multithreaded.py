@@ -23,19 +23,34 @@ def measure_steps(design: str, threads: int, run_number=-1):
     break_flag = False
     for number in tqdm(range(runs_no)):
         for step in tqdm(steps, leave=False):
-            run_cmd = f"make -C OpenROAD-flow-scripts/flow/ DESIGN_CONFIG=designs/nangate45/{design}/config.mk {step}  OR_ARGS='-threads {threads}'"
-            output_dir = f"output_{design}"
-            if not os.path.exists(output_dir):
-                os.mkdir(output_dir)
-            if run_number != -1:
-                number = run_number
-                break_flag = True
-            with open(f"output_{design}/run_{number}_{step}_{threads}.log", "w") as f:
-                proc = subprocess.run(run_cmd, shell=True, stdout=f, stderr=f)
+            # Since OpenROAD is unstable, this will try to complete a step until a job times out
+            try_count = 0
+            while try_count < 9:
+                try_count += 1
+                print(f"Try of step {step} number {try_count}")
+
+                run_cmd = f"make -C OpenROAD-flow-scripts/flow/ DESIGN_CONFIG=designs/nangate45/{design}/config.mk {step}  OR_ARGS='-threads {threads}'"
+                output_dir = f"output_{design}"
+                if not os.path.exists(output_dir):
+                    os.mkdir(output_dir)
+
+                if run_number != -1:
+                    number = run_number
+                    break_flag = True
+
+                proc = None
+                with open(f"output_{design}/run_{number}_{step}_{threads}.log", "w") as f:
+                    proc = subprocess.run(run_cmd, shell=True, stdout=f, stderr=f)
+
                 if proc.returncode != 0:
-                    # raise Exception("Subprocess failed")
                     print("ERROR: Subprocess failed\nlogs:")
-                    print(proc.stderr)
+                    with open(f"output_{design}/run_{number}_{step}_{threads}.log", "r") as f:
+                        print(f.read()) 
+                    # clear the data file
+                    open(f"output_{design}/run_{number}_{step}_{threads}.log", "w").close()
+                else:
+                    break
+
         if break_flag:
             break
 
