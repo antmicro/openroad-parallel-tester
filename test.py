@@ -22,7 +22,7 @@ from common import steps, runs_no
 def measure_steps(design: str):
     for number in tqdm(range(runs_no)):
         for step in tqdm(steps, leave=False):
-            run_cmd = f"make -C OpenROAD-flow-scripts/flow/ DESIGN_CONFIG=designs/nangate45/{design}/config.mk {step}  OR_ARGS='-threads 4'"
+            run_cmd = f"make -C OpenROAD-flow-scripts/flow/ DESIGN_CONFIG=designs/nangate45/{design}/config.mk {step}  OR_ARGS='-threads 8'"
             output_dir = f"output_{design}"
             if not os.path.exists(output_dir):
                 os.mkdir(output_dir)

@@ -42,7 +42,14 @@ jobs:
           cmake tools/OpenROAD -B tools/OpenROAD/build -D CMAKE_INSTALL_PREFIX="$PWD/tools/install/OpenROAD" -D BUILD_GUI=OFF -DCMAKE_CXX_FLAGS="${OPENROAD_OPTS}" -D CMAKE_C_FLAGS="${OPENROAD_OPTS}" ${OPENROAD_APP_ARGS} 2>&1 | tee ../build-openroad.log
           cmake --build tools/OpenROAD/build --target install -j $(nproc --all) 2>&1 | tee -a ../build-openroad.log
           make install -C tools/yosys -j $(nproc --all) CONFIG=gcc PREFIX="$PWD/tools/install/yosys" ${YOSYS_ARGS} | tee ../build-yosys.log
+          cp -r flow/designs/nangate45/ariane133 flow/designs/nangate45/ariane133_50clk
           cd ../
+          python3 clockify_ariane.py OpenROAD-flow-scripts/flow/designs/nangate45/ariane133_50clk/ariane.sdc OpenROAD-flow-scripts/flow/designs/nangate45/ariane133_50clk/config.mk
+          echo "-------"
+          cat OpenROAD-flow-scripts/flow/designs/nangate45/ariane133_50clk/ariane.sdc
+          echo "-------"
+          cat OpenROAD-flow-scripts/flow/designs/nangate45/ariane133_50clk/config.mk
+          echo "-------"
           tar cvf workspace.tar ./*
       - name: Upload binaries
         uses: actions/upload-artifact@v4
@@ -56,12 +63,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        designs: [ibex, ariane133]
-    runs-on: [self-hosted, Linux, X64]
-    container: debian:bullseye-slim
+        designs: [ariane133_50clk, ariane133]
     env:
       GHA_MACHINE_TYPE: "n2-standard-8"
-
+    runs-on: [self-hosted, Linux, X64]
+    container: debian:bullseye-slim
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v4
@@ -79,7 +85,8 @@ jobs:
           export LD_LAST_PATH=$LD_LIBRARY_PATH
           source ./dependencies/env.sh
           export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$LD_LAST_PATH
-          make -C OpenROAD-flow-scripts/flow/ DESIGN_CONFIG=designs/nangate45/${{ matrix.designs }}/config.mk cts OR_ARGS='-threads 16' -e LD_LIBRARY_PATH=$LD_LIBRARY_PATH 
+          # To combat instability, make the cache step single core before running tests
+          make -C OpenROAD-flow-scripts/flow/ DESIGN_CONFIG=designs/nangate45/${{ matrix.designs }}/config.mk cts OR_ARGS='-threads 1' -e LD_LIBRARY_PATH=$LD_LIBRARY_PATH 
           tar cvf workspace-${{ matrix.designs }}.tar ./*
       - name: Upload binaries
         uses: actions/upload-artifact@v4
@@ -92,10 +99,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        designs: [ibex, ariane133]
+        designs: [ariane133_50clk, ariane133]
+    timeout-minutes: 720
     runs-on: [self-hosted, Linux, X64]
     container: debian:bullseye-slim
     needs: [cache_flows]
+    env:
+      GHA_MACHINE_TYPE: "n2-standard-8"
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v4
