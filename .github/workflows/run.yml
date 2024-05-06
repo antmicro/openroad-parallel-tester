@@ -16,7 +16,7 @@ jobs:
           ./apt_install.sh
           python3 -m pip install --no-cache-dir --upgrade tabulate
           ./deps.sh --or-tools-arch amd64 --or-tools-os debian --or-tools-os-version 11 --skip-valgrind
-          ./download.sh --full --openroad-flow-scripts-revision 0adaebe958681ae37a4c431081eba33f27a87411
+          ./download.sh --full --openroad-flow-scripts-revision 0adaebe958681ae37a4c431081eba33f27a87411 --lsoracle-revision febd1523e33bf5967a5556ec64c3d3057c54726e
           source ./dependencies/env.sh
           echo "OPENROAD BUILD CONFIGURATION:"
           echo "-----------------------------"
