@@ -24,7 +24,7 @@ on:
 
 jobs:
   run_matrix:
-    timeout-minutes: 720
+    timeout-minutes: 480
     strategy:
       fail-fast: false
       matrix:
