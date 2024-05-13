@@ -1,0 +1,29 @@
+# Revision configuration file for A-B testing of OpenROAD versions
+# This file defines two sets of variables, one for each concurrently running pipeline
+# For each revision, there are four main repositories, each containing two variables:
+# 
+#   <REPOSITORY_NAME>_URL contains the URL of a git repository with the specific module
+#   <REPOSOTORY_NAME>_REVISION contains the revision (branch, tag or commit hash) to be checked out
+# 
+# As a default value (later taken from submodules or assumed to be master, depending on the context), 
+# the fields are to remain as an empty string or be deleted/commented out
+
+[revision_a]
+OPENROAD_URL = ""
+OPENROAD_REVISION = "master"
+OPENROAD_FLOW_SCRIPTS_URL = ""
+OPENROAD_FLOW_SCRIPTS_REVISION = ""
+YOSYS_URL = ""
+YOSYS_REVISION = ""
+LSORACLE_URL = ""
+LSORACLE_REVISION = ""
+
+[revision_b]
+OPENROAD_URL = ""
+OPENROAD_REVISION = ""
+OPENROAD_FLOW_SCRIPTS_URL = ""
+OPENROAD_FLOW_SCRIPTS_REVISION = ""
+YOSYS_URL = ""
+YOSYS_REVISION = ""
+LSORACLE_URL = ""
+LSORACLE_REVISION = ""

@@ -1,0 +1,152 @@
+# Copyright 2024 Antmicro
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+on:
+  workflow_call:
+    inputs:
+      env_file:
+        required: true
+        type: string
+      artifact_prefix:
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: [self-hosted, Linux, X64]
+    container: debian:bullseye-slim
+    env:
+      GHA_MACHINE_TYPE: "n2-standard-16"
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+      - name: build
+        shell: bash
+        run: |
+          ./apt_install.sh
+          python3 -m pip install --no-cache-dir --upgrade tabulate
+
+          # Change to OpenSTA revision where a prolific race condition is fixed
+          # PR to track it being possibly merged to master:
+          # https://github.com/parallaxsw/OpenSTA/pull/35
+          export OPENSTA_URL=https://github.com/antmicro/OpenSTA
+          export OPENSTA_REVISION=d069d5a7fd7f4c0d385f4bcb91734a3d88279699
+
+          third-party/deps.sh --or-tools-arch amd64 --or-tools-os debian --or-tools-os-version 11 --skip-valgrind
+          third-party/download.sh --full --openroad-revision master
+          source ./dependencies/env.sh
+          cd OpenROAD-flow-scripts
+          cmake tools/OpenROAD -B tools/OpenROAD/build -D CMAKE_INSTALL_PREFIX="$PWD/tools/install/OpenROAD" -D BUILD_GUI=OFF 2>&1 | tee ../build-openroad.log
+          cmake --build tools/OpenROAD/build --target install -j $(nproc --all) 2>&1 | tee -a ../build-openroad.log
+          make install -C tools/yosys -j $(nproc --all) CONFIG=gcc PREFIX="$PWD/tools/install/yosys" ${YOSYS_ARGS} | tee ../build-yosys.log
+          cp -r flow/designs/nangate45/ariane133 flow/designs/nangate45/ariane133_50clk
+          cd ../
+          python3 ariane_add_clocks.py OpenROAD-flow-scripts/flow/designs/nangate45/ariane133_50clk/ariane.sdc OpenROAD-flow-scripts/flow/designs/nangate45/ariane133_50clk/config.mk
+          tar cvf workspace.tar ./*
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_prefix }}-workspace-tarball
+          path: |
+            workspace.tar
+
+      - name: Upload build logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_prefix }}-build-logs
+          path: |
+            build-openroad.log
+            build-yosys.log
+
+  cache_flows:
+    needs: [build]
+    strategy:
+      fail-fast: false
+      matrix:
+        designs: [ibex, tinyRocket, black_parrot]
+    runs-on: [self-hosted, Linux, X64]
+    container: debian:bullseye-slim
+    env:
+      GHA_MACHINE_TYPE: "n2-standard-4"
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact_prefix }}-workspace-tarball
+      - name: untar workspace
+        shell: bash
+        run: |
+          tar xvf workspace.tar
+          rm workspace.tar
+      - name: run flow
+        shell: bash
+        run: |
+          ./apt_install.sh
+          # Saving previous states of LD_LIBRARY_PATH saves the environment's defaults
+          # from being overridden, in CI it avoids linking errors
+          export LD_LAST_PATH=$LD_LIBRARY_PATH
+          source ./dependencies/env.sh
+          export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$LD_LAST_PATH
+          make -C OpenROAD-flow-scripts/flow/ DESIGN_CONFIG=designs/nangate45/${{ matrix.designs }}/config.mk cts OR_ARGS='-threads 1' -e LD_LIBRARY_PATH=$LD_LIBRARY_PATH
+          tar cvf workspace-${{ matrix.designs }}.tar ./OpenROAD-flow-scripts/flow/designs ./OpenROAD-flow-scripts/flow/objects ./OpenROAD-flow-scripts/flow/logs ./OpenROAD-flow-scripts/flow/reports ./OpenROAD-flow-scripts/flow/results
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_prefix }}-workspace-tarball-${{ matrix.designs }}
+          path: |
+            workspace-${{ matrix.designs }}.tar
+
+  run_standard_8:
+    needs: [cache_flows]
+    uses: ./.github/workflows/bench.yml
+    with:
+      cores: "[1,2,4]"
+      # cores: "[1]"
+      machtype: n2-standard-8
+      artifact_prefix: ${{ inputs.artifact_prefix }}
+
+  run_standard_16:
+    needs: [cache_flows]
+    uses: ./.github/workflows/bench.yml
+    with:
+      cores: "[8,12,16]"
+      machtype: n2-standard-16
+      artifact_prefix: ${{ inputs.artifact_prefix }}
+
+  collect_data:
+    runs-on: [self-hosted, Linux, X64]
+    container: debian:bullseye-slim
+    needs: [run_standard_8, run_standard_16]
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ${{ inputs.artifact_prefix }}-output-*
+          path: test_artifacts
+          merge-multiple: true
+      - name: build
+        shell: bash
+        run: |
+          ./apt_install.sh
+          mv test_artifacts/output-*.tar ./
+          for a in `ls -1 *.tar`; do tar xvf $a; done
+          python3 report.py >> $GITHUB_STEP_SUMMARY
+          cat $GITHUB_STEP_SUMMARY > report.md
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_prefix }}-report
+          path: report.md

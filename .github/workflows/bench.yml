@@ -21,6 +21,9 @@ on:
       machtype:
         required: true
         type: string
+      artifact_prefix:
+        required: true
+        type: string
 
 jobs:
   run_matrix:
@@ -41,11 +44,11 @@ jobs:
       - name: Download workspace
         uses: actions/download-artifact@v4
         with:
-          name: workspace-tarball
+          name: ${{ inputs.artifact_prefix }}-workspace-tarball
       - name: Download cached flows
         uses: actions/download-artifact@v4
         with:
-          name: workspace-tarball-${{ matrix.designs }}
+          name: ${{ inputs.artifact_prefix }}-workspace-tarball-${{ matrix.designs }}
       - name: untar workspace
         shell: bash
         run: |
@@ -71,6 +74,6 @@ jobs:
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
-          name: output-${{ matrix.designs }}-${{ matrix.cores }}-${{ matrix.run_number }}
+          name: ${{ inputs.artifact_prefix }}-output-${{ matrix.designs }}-${{ matrix.cores }}-${{ matrix.run_number }}
           path: |
             output-${{ matrix.designs }}_${{ matrix.cores }}_${{ matrix.run_number }}.tar
