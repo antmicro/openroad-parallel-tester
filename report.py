@@ -66,6 +66,38 @@ def process_design_logs(design):
 
                             table_data[cores][design][step][str(number)] = seconds
 def render_table(table):
+    coredata = {}
+    for core in table.keys():
+        for design in table[core].keys():
+            for step in table[core][design].keys():
+                if design not in coredata:
+                    coredata[design] = {}
+                if step not in coredata[design]:
+                    coredata[design][step] = []
+                coredata[design][step].append(
+                    {
+                        "cores": core,
+                        "Median (s)": round(median([v for _, v in table[core][design][step].items()]),3),
+                    }
+                )
+
+    for design in coredata.keys():
+        print("##", design, "median times at all core counts:", end="\n\n")
+        print("| step\\core count | ", end='')
+        for core in table.keys():
+            print(core, end=" | ")
+        print("\n| --- ", end='')
+        for core in table.keys():
+            print("| ---", end=" ")
+        print("|")
+        for step, data in coredata[design].items():
+            print("|", step, end="| ")
+            for point in data:
+                for core in table.keys():
+                    if point["cores"] == core:
+                        print(point["Median (s)"], "| ", end="")
+            print()
+
     for core in table.keys():
         for design in table[core].keys():
             data = [

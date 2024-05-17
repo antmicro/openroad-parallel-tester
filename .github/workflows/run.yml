@@ -50,10 +50,68 @@ jobs:
     with:
       artifact_prefix: reva
       env_file: env_a.sh
-    
+
   run_revision_b:
     needs: [prepare_revisions]
     uses: ./.github/workflows/run_single.yml
     with:
       artifact_prefix: revb
       env_file: env_b.sh
+
+  diff:
+    needs: [run_revision_a, run_revision_b]
+    runs-on: [self-hosted, Linux, X64]
+    container: debian:bullseye-slim
+    env:
+      GHA_MACHINE_TYPE: "n2-standard-4"
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+      - name: Create directory structure
+        shell: bash
+        run: |
+          mkdir -p diff/a
+          mkdir diff/b
+      - name: Download Revision A artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: reva-output-*
+          path: diff/a/
+          merge-multiple: true
+      - name: Download Revision B artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: reva-output-*
+          path: diff/b/
+          merge-multiple: true
+      - name: Download report A
+        uses: actions/download-artifact@v4
+        with:
+          name: reva-report
+          path: diff/a/
+      - name: Download report B
+        uses: actions/download-artifact@v4
+        with:
+          name: revb-report
+          path: diff/b/
+      - name: Run differential reporting
+        shell: bash
+        run: |
+          INST="env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends"
+          apt-get -y update && $INST \
+              python3-dev \
+              python3-pip
+          ls -R diff
+          cd diff/a/
+          for a in `ls -1 *.tar`; do tar xvf $a; done
+          cd ../b
+          for a in `ls -1 *.tar`; do tar xvf $a; done
+          cd ..
+          python3 diff_logs.py
+          cat diff_report.md > $GITHUB_STEP_SUMMARY
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: differential-report
+          path: diff_report.md
+
