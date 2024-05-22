@@ -17,10 +17,10 @@ import sys
 import time
 import subprocess
 from tqdm import tqdm
-from common import steps, runs_no
+from common import steps
 import subprocess
 import sched
-from threading import Thread
+from threading import Thread, Lock
 import time
 import os
 
@@ -28,6 +28,7 @@ import os
 # hasn't logged anything for set amout of seconds
 TIMEOUT_TIME = 5400
 BENCH_PROC = None
+queue_mutex = Lock()
 
 def check(sched, filename, last, iter_left):
     global BENCH_PROC
@@ -40,65 +41,59 @@ def check(sched, filename, last, iter_left):
         else:
             print("PROCESS IS NOT RESPONDING, KILLING")
             BENCH_PROC.kill() # type: ignore
-            list(map(sched.cancel, sched.queue))
+            with queue_mutex:
+                list(map(sched.cancel, sched.queue))
             with open(filename, 'r') as f:
                 print(f.read())
             return
     else:
         last = last_size
         iter_left = TIMEOUT_TIME
-    sched.enter(1, 1, check, (sched, filename, last, iter_left))
+    with queue_mutex:
+        sched.enter(1, 1, check, (sched, filename, last, iter_left))
 
-def measure_steps(design: str, threads: int, run_number=-1):
-    break_flag = False
+def measure_steps(design: str, threads: int, number: int):
     global BENCH_PROC
-    for number in tqdm(range(runs_no)):
-        for step in tqdm(steps, leave=False):
-            try_count = 0
-            while try_count < 9:
-                try_count += 1
-                print(f"Try of step {step} number {try_count}")
+    for step in tqdm(steps, leave=False):
+        try_count = 0
+        while try_count < 9:
+            try_count += 1
+            print(f"Try of step {step} number {try_count}")
 
-                run_cmd = f"make -C OpenROAD-flow-scripts/flow/ DESIGN_CONFIG=designs/nangate45/{design}/config.mk {step}  OR_ARGS='-threads {threads}'"
-                output_dir = f"output_{design}"
-                if not os.path.exists(output_dir):
-                    os.mkdir(output_dir)
+            run_cmd = f"make -C OpenROAD-flow-scripts/flow/ DESIGN_CONFIG=designs/nangate45/{design}/config.mk {step}  OR_ARGS='-threads {threads}'"
+            output_dir = f"output_{design}"
+            if not os.path.exists(output_dir):
+                os.mkdir(output_dir)
 
-                if run_number != -1:
-                    number = run_number
-                    break_flag = True
+            filename = f"output_{design}/run_{number}_{step}_{threads}.log"
 
-                filename = f"output_{design}/run_{number}_{step}_{threads}.log"
+            with open(filename, "w") as f:
+                s = sched.scheduler(time.time, time.sleep)
+                mem_ev = s.enter(0, 1, check, (s, filename, "", TIMEOUT_TIME))
+                thread = Thread(target = s.run)
+                thread.start()
 
-                with open(filename, "w") as f:
-                    s = sched.scheduler(time.time, time.sleep)
-                    mem_ev = s.enter(0, 1, check, (s, filename, "", TIMEOUT_TIME))
-                    thread = Thread(target = s.run)
-                    thread.start()
+                BENCH_PROC = subprocess.Popen(run_cmd, shell=True, stdout=f, stderr=f)
+                BENCH_PROC.wait()
 
-                    BENCH_PROC = subprocess.Popen(run_cmd, shell=True, stdout=f, stderr=f)
-                    BENCH_PROC.wait()
-
+                with queue_mutex:
                     list(map(s.cancel, s.queue))
                     thread.join()
 
-                if BENCH_PROC.returncode != 0:
-                    BENCH_PROC = None
-                    print("ERROR: Subprocess failed\nlogs:")
-                    with open(f"output_{design}/run_{number}_{step}_{threads}.log", "r") as f:
-                        print(f.read()) 
-                    # clear the data file
-                    open(f"output_{design}/run_{number}_{step}_{threads}.log", "w").close()
-                else:
-                    BENCH_PROC = None
-                    break
-
-        if break_flag:
-            break
+            if BENCH_PROC.returncode != 0:
+                BENCH_PROC = None
+                print("ERROR: Subprocess failed\nlogs:")
+                with open(f"output_{design}/run_{number}_{step}_{threads}.log", "r") as f:
+                    print(f.read()) 
+                # clear the data file
+                open(f"output_{design}/run_{number}_{step}_{threads}.log", "w").close()
+            else:
+                BENCH_PROC = None
+                break
 
 
 if __name__ == "__main__":
     if len(sys.argv) == 4:
         measure_steps(sys.argv[1], int(sys.argv[2]), int(sys.argv[3]))
     else:
-        measure_steps(sys.argv[1], int(sys.argv[2]))
+        print("USAGE: python3 benchmark_multithreaded.py <design name> <threads_number> <run_number>")
