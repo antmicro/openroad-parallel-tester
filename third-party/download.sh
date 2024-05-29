@@ -11,6 +11,12 @@ _cloneRepository() {
     git clone $4 $1 $3
     pushd ${3:-$(_urlToFolder $1)}
         git checkout $2
+        # fix for checking out into yosys versions that tightened up the restrictions about
+        # ABC version but have not yet defined the submodule
+        if [[ ${3:-$(basename $(pwd))} == "yosys" ]]; then
+            rm -rf abc
+            git submodule update --init --recursive
+        fi
         echo "Repository ${1} with HASH: $(git rev-parse HEAD)"
     popd
 }
@@ -221,5 +227,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 _cloneRepositories
+
+
 
 
