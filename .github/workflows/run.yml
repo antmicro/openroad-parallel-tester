@@ -29,6 +29,13 @@ jobs:
         run: |
           ./apt_install.sh
           python3 -m pip install --no-cache-dir --upgrade tabulate
+
+          # Change to OpenSTA revision where a prolific race condition is fixed
+          # PR to track it being possibly merged to master:
+          # https://github.com/The-OpenROAD-Project/OpenSTA/pull/240
+          export OPENSTA_URL=https://github.com/antmicro/OpenSTA
+          export OPENSTA_REVISION=d069d5a7fd7f4c0d385f4bcb91734a3d88279699
+
           third-party/deps.sh --or-tools-arch amd64 --or-tools-os debian --or-tools-os-version 11 --skip-valgrind
           third-party/download.sh --full
           source ./dependencies/env.sh
